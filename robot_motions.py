@@ -1,122 +1,269 @@
 import pygame
 import sys
 import random
+import numpy as np
+from enum import Enum
 
-SCREEN_SIZE = WIDTH, HEIGHT = 800, 600
+pygame.init()
+pygame.display.set_caption("Robot Motions")
+
+# Directions
+class Direction(Enum):
+    UP = 0
+    DOWN = 1
+    LEFT = 2
+    RIGHT = 3
 
 # Colors
-BLACK = 0, 0, 0
-WHITE = 255, 255, 255
-BLUE = 0, 0, 255
-RED = 255, 0, 0
-GREEN = 0, 255, 0
+class Colors():
+    BLACK = 0, 0, 0
+    WHITE = 255, 255, 255
+    BLUE = 0, 0, 255
+    RED = 255, 0, 0
+    GREEN = 0, 255, 0
 
-# Objects
-ROBOT_SIZE = 30
-OBSTACLE_SIZE = 50
-MOVE_SPEED = 5
-ROBOT_MOVED = False
+class Game:
+    def __init__(self, width=600, height=600):
+        self.width = width
+        self.height = height
 
-# Initialization
-pygame.init()
-screen = pygame.display.set_mode(SCREEN_SIZE)
-pygame.display.set_caption("Robot Motions")
-clock = pygame.time.Clock()
+        self.screen = pygame.display.set_mode((self.width, self.height))
+        self.time = pygame.time
+        self.score = 0
 
-# Robot position
-robot_coords = [WIDTH//2, HEIGHT//2]
+        self.map = Map(width=self.width, height=self.height)
+        self.robot = Robot(self.width // 2, self.height // 2, speed=5, radius=20)
 
-# Obstacles
-obstacles = []
-for _ in range(5):
-    x = random.randint(0, WIDTH - OBSTACLE_SIZE)
-    y = random.randint(0, HEIGHT - OBSTACLE_SIZE)
-    obstacle_coords = [x, y]
-    obstacles.append(obstacle_coords)
+    def play_step(self, action):
+        self.screen.fill(Colors.WHITE)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return self.robot.reward, True, self.score
 
-# Offset for moving the world
-world_offset_x, world_offset_y = 0, 0
+        self.robot._update_robot_position(action)
+        self.robot._alive_reward()
+        collision = self.robot.collision_detection(self, True)
 
-def generate_new_obstacles():
-    new_obstacles = []
-    for _ in range(5):
-        side = random.choice(['left', 'right', 'top', 'bottom'])
-        if side == 'left':
-            x = random.randint(-WIDTH, -OBSTACLE_SIZE)
-            y = random.randint(0, HEIGHT - OBSTACLE_SIZE)
-        elif side == 'right':
-            x = random.randint(WIDTH, WIDTH * 2 - OBSTACLE_SIZE)
-            y = random.randint(0, HEIGHT - OBSTACLE_SIZE)
-        elif side == 'top':
-            x = random.randint(0, WIDTH - OBSTACLE_SIZE)
-            y = random.randint(-HEIGHT, -OBSTACLE_SIZE)
-        elif side == 'bottom':
-            x = random.randint(0, WIDTH - OBSTACLE_SIZE)
-            y = random.randint(HEIGHT, HEIGHT * 2 - OBSTACLE_SIZE)
+        self.map._discover_new_area(self.robot)
+        self.map._draw_map(self.screen, self.robot)
 
-        new_obstacles.append([x + world_offset_x, y + world_offset_y])
-    return new_obstacles
+        pygame.display.flip()
+        self.time.Clock().tick(60)
 
-# Main Loop
-while True:
-    screen.fill(WHITE)
+        return self.robot.reward, collision, self.score
 
-    # Draw Robot
-    robot_x, robot_y = robot_coords
-    pygame.draw.circle(screen, BLUE, robot_coords, ROBOT_SIZE)
+    def _reset_robot(self):
+        self.robot.x = self.width // 2
+        self.robot.y = self.height // 2
+        self.score = self.robot.total_moves
+        self.robot.total_moves = 0
 
-    # Draw Obstacles
-    for obstacle in obstacles:
-        pygame.draw.rect(screen, RED, (obstacle[0] - world_offset_x, obstacle[1] - world_offset_y, OBSTACLE_SIZE, OBSTACLE_SIZE))
+    def reset(self):
+        self.robot.reward = 0
+        self._reset_robot()
+        self.score = 0
 
-    # Event Handling
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+    def generate_map(self):
+        self.map = Map(width=self.width, height=self.height)
 
-    # Robot Motions
-    keys = pygame.key.get_pressed()
+class Map:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
 
-    move_x, move_y = 0, 0
-    if keys[pygame.K_UP]:
-        world_offset_y -= MOVE_SPEED
-        ROBOT_MOVED = True
-    elif keys[pygame.K_DOWN]:
-        world_offset_y += MOVE_SPEED
-        ROBOT_MOVED = True
-    if keys[pygame.K_LEFT]:
-        world_offset_x -= MOVE_SPEED
-        ROBOT_MOVED = True
-    elif keys[pygame.K_RIGHT]:
-        world_offset_x += MOVE_SPEED
-        ROBOT_MOVED = True
+        self.areas = {}
+        self.border_x1 = 0
+        self.border_y1 = 0
+        self.border_x2 = self.width
+        self.border_y2 = self.height
 
-    # Generate new obstacles if robot moves to the edge of the window
-    if (ROBOT_MOVED and 
-        (((world_offset_x % (WIDTH//2)) == 0 and world_offset_x > 0) or
-        ((world_offset_x % (WIDTH//2)) == 0 and world_offset_x < 0) or
-        ((world_offset_y % (HEIGHT//2)) == 0 and world_offset_y > 0) or
-        ((world_offset_y % (HEIGHT//2)) == 0 and world_offset_y < 0))):
+        self._add_area(0, 0)
 
-        obstacles.extend(generate_new_obstacles())
-        ROBOT_MOVED = False
+    def _add_area(self, x_offset, y_offset):
+        area_coords = (x_offset, y_offset)
+        if area_coords not in self.areas:
+            new_area = Area(x_offset, y_offset, x_offset + self.width, y_offset + self.height)
+            self.areas[area_coords] = new_area
 
-    # Collision Detection
-    for obstacle in obstacles:
-        obstacle_x, obstacle_y = obstacle[0] - world_offset_x, obstacle[1] - world_offset_y
-        if (robot_coords[0] + ROBOT_SIZE > obstacle_x and
-            robot_coords[0] - ROBOT_SIZE < obstacle_x + OBSTACLE_SIZE and
-            robot_coords[1] + ROBOT_SIZE > obstacle_y and
-            robot_coords[1] - ROBOT_SIZE < obstacle_y + OBSTACLE_SIZE):
-            
-            # Reset the world if collision happens
-            world_offset_x, world_offset_y = 0, 0
-            obstacles = []
-            for _ in range(5):
-                x = random.randint(0, WIDTH - OBSTACLE_SIZE)
-                y = random.randint(0, HEIGHT - OBSTACLE_SIZE)
-                obstacles.append([x, y])
-        
-    pygame.display.flip()
-    clock.tick(60)
+            self.border_x1 = min(self.border_x1, x_offset)
+            self.border_y1 = min(self.border_y1, y_offset)
+            self.border_x2 = max(self.border_x2, x_offset + self.width)
+            self.border_y2 = max(self.border_y2, y_offset + self.height)
+
+    def _is_area_discovered(self, x1, y1, x2, y2):
+        for area in self.areas.values():
+            if area.x1 == x1 and area.y1 == y1 and area.x2 == x2 and area.y2 == y2:
+                return True
+        return False
+    
+    def _get_current_area_coords(self, robot):
+        x1 = (robot.x // self.width) * self.width
+        y1 = (robot.y // self.height) * self.height
+        x2 = x1 + self.width
+        y2 = y1 + self.height
+        return x1, y1, x2, y2
+
+    def _discover_new_area(self, robot):
+        x1, y1, x2, y2 = self._get_current_area_coords(robot)
+
+        if not self._is_area_discovered(x1, y1, x2, y2):
+            self._add_area(x1, y1)
+            robot.reward += 50
+
+    def _draw_map(self, screen, robot):
+        offset_x = self.width // 2 - robot.x
+        offset_y = self.height // 2 - robot.y
+
+        for area in self.areas.values():
+            rect = pygame.Rect(area.x1 + offset_x, area.y1 + offset_y, self.width, self.height)
+            pygame.draw.rect(screen, Colors.BLACK, rect, 2)
+
+            for obstacle in area.obstacles:
+                if obstacle.visible:
+                    pygame.draw.rect(screen, Colors.RED, (obstacle.x + offset_x, obstacle.y + offset_y, obstacle.size, obstacle.size))
+
+        pygame.draw.circle(screen, Colors.BLUE, (self.width // 2, self.height // 2), robot.radius)
+
+
+class Area:
+    def __init__(self, x1, y1, x2, y2):
+        self.x1 = x1
+        self.y1 = y1
+        self.x2 = x2
+        self.y2 = y2
+        self.obstacles = self._generate_obstacles(50)
+
+    def _generate_obstacles(self, obstacle_size, n=10):
+    ### area (4n-tuples): area where to generate the obstacles
+    ### n (int): number of obstacles to generate
+        obstacles = []
+        for _ in range(n):
+            x = random.randint(self.x1, self.x2 - obstacle_size)
+            y = random.randint(self.y1, self.y2 - obstacle_size)
+            obstacles.append(Obstacle(x, y, obstacle_size))
+        return obstacles
+
+class Obstacle:
+    def __init__(self, x, y, obstacle_size):
+        self.x = x
+        self.y = y
+        self.size = obstacle_size
+        self.visible = True
+
+class Robot:
+    def __init__(self, x, y, speed=5, radius=20):
+        self.x = x
+        self.y = y
+
+        self.speed = speed
+        self.radius = radius
+        self.reward = 0
+
+        self.last_moves = []
+
+        self.direction = Direction.UP
+        self.total_moves = 0
+        self.best_total_moves = 0
+
+    def _update_robot_position(self, action):
+        # AI CONTROL
+        clock_wise = [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT]
+        idx = clock_wise.index(self.direction)
+
+        if np.array_equal(action, [0, 1, 0, 0]):
+            new_dir = clock_wise[(idx + 1) % 4]
+        elif np.array_equal(action, [0, 0, 1, 0]):
+            new_dir = clock_wise[(idx - 1) % 4]
+        elif np.array_equal(action, [0, 0, 0, 1]):
+            new_dir = clock_wise[(idx + 2) % 4]
+        else:
+            new_dir = clock_wise[idx]
+
+        self.direction = new_dir
+        if self.direction == Direction.UP:
+            self.y -= self.speed
+            self.total_moves += 1
+        elif self.direction == Direction.DOWN:
+            self.y += self.speed
+            self.total_moves += 1
+        elif self.direction == Direction.LEFT:
+            self.x -= self.speed
+            self.total_moves += 1
+        elif self.direction == Direction.RIGHT:
+            self.x += self.speed
+            self.total_moves += 1
+
+        self.last_moves.append(self.direction)
+        if len(self.last_moves) > 4:
+            self.last_moves.pop(0)
+
+        self._check_bad_moves()
+
+        # MANUAL CONTROL
+        # keys = pygame.key.get_pressed()
+        # if keys[pygame.K_UP]:
+        #     self.y -= self.speed
+        #     self.total_moves += 1
+        # elif keys[pygame.K_DOWN]:
+        #     self.y += self.speed
+        #     self.total_moves += 1
+        # if keys[pygame.K_LEFT]:
+        #     self.x -= self.speed
+        #     self.total_moves += 1
+        # elif keys[pygame.K_RIGHT]:
+        #     self.x += self.speed
+        #     self.total_moves += 1
+
+    def _check_bad_moves(self):
+        if (self.last_moves) == 4:
+            if (np.array_equal(self.last_moves[:3], [Direction.UP, Direction.DOWN, Direction.UP]) or
+                np.array_equal(self.last_moves[:3], [Direction.DOWN, Direction.UP, Direction.DOWN]) or
+                np.array_equal(self.last_moves[:3], [Direction.LEFT, Direction.RIGHT, Direction.LEFT]) or
+                np.array_equal(self.last_moves[:3], [Direction.RIGHT, Direction.LEFT, Direction.RIGHT])):
+                self.reward -= 5
+            elif (np.array_equal(self.last_moves, [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT]) or
+                  np.array_equal(self.last_moves, [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]) or
+                  np.array_equal(self.last_moves, [Direction.DOWN, Direction.LEFT, Direction.UP, Direction.RIGHT]) or
+                  np.array_equal(self.last_moves, [Direction.LEFT, Direction.UP, Direction.RIGHT, Direction.DOWN]) or
+                  np.array_equal(self.last_moves, [Direction.UP, Direction.LEFT, Direction.DOWN, Direction.RIGHT]) or
+                  np.array_equal(self.last_moves, [Direction.LEFT, Direction.DOWN, Direction.RIGHT, Direction.UP]) or
+                  np.array_equal(self.last_moves, [Direction.DOWN, Direction.RIGHT, Direction.UP, Direction.LEFT]) or
+                  np.array_equal(self.last_moves, [Direction.RIGHT, Direction.UP, Direction.LEFT, Direction.DOWN])):
+                self.reward -= 10
+
+    def collision_detection(self, game, action=False):
+        for area in game.map.areas.values():
+            for obstacle in area.obstacles:
+                if (self.x - self.radius < obstacle.x + obstacle.size and 
+                    self.x + self.radius > obstacle.x and 
+                    self.y - self.radius < obstacle.y + obstacle.size and 
+                    self.y + self.radius > obstacle.y):
+                    self.reward -= 20
+                    if action:
+                        obstacle.visible = True
+                        game._reset_robot() 
+                    return True
+        return False
+
+    def _alive_reward(self):
+        if self.total_moves > self.best_total_moves:
+            self.reward += 1
+            self.best_total_moves = self.total_moves
+
+
+if __name__ == "__main__":
+    WIDTH = 600
+    HEIGHT = 600
+
+    game = Game(WIDTH, HEIGHT)
+
+    while True:
+        stop, score = game.play_step()
+    
+        if stop:
+            break
+
+    print("Final score:", score)
+
+    pygame.quit()
