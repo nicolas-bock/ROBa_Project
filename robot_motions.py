@@ -42,16 +42,17 @@ class Game:
                 return self.robot.reward, True, self.score
 
         self.robot._update_robot_position(action)
-        self.robot._alive_reward()
         collision = self.robot.collision_detection(self, True)
 
+        game_over = collision or self.robot.reward < -1000
+
         self.map._discover_new_area(self.robot)
-        self.map._draw_map(self.screen, self.robot)
+        self.map._draw_map(self.screen, self.robot, self.time)
 
         pygame.display.flip()
         self.time.Clock().tick(60)
 
-        return self.robot.reward, collision, self.score
+        return self.robot.reward, game_over, self.score
 
     def _reset_robot(self):
         self.robot.x = self.width // 2
@@ -111,7 +112,7 @@ class Map:
             self._add_area(x1, y1)
             robot.reward += 50
 
-    def _draw_map(self, screen, robot):
+    def _draw_map(self, screen, robot, time):
         offset_x = self.width // 2 - robot.x
         offset_y = self.height // 2 - robot.y
 
@@ -149,7 +150,7 @@ class Obstacle:
         self.x = x
         self.y = y
         self.size = obstacle_size
-        self.visible = True
+        self.visible = False
 
 class Robot:
     def __init__(self, x, y, speed=5, radius=20):
@@ -199,6 +200,7 @@ class Robot:
             self.last_moves.pop(0)
 
         self._check_bad_moves()
+        self._alive_reward()
 
         # MANUAL CONTROL
         # keys = pygame.key.get_pressed()
@@ -216,21 +218,33 @@ class Robot:
         #     self.total_moves += 1
 
     def _check_bad_moves(self):
-        if (self.last_moves) == 4:
-            if (np.array_equal(self.last_moves[:3], [Direction.UP, Direction.DOWN, Direction.UP]) or
-                np.array_equal(self.last_moves[:3], [Direction.DOWN, Direction.UP, Direction.DOWN]) or
-                np.array_equal(self.last_moves[:3], [Direction.LEFT, Direction.RIGHT, Direction.LEFT]) or
-                np.array_equal(self.last_moves[:3], [Direction.RIGHT, Direction.LEFT, Direction.RIGHT])):
-                self.reward -= 5
-            elif (np.array_equal(self.last_moves, [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT]) or
-                  np.array_equal(self.last_moves, [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]) or
-                  np.array_equal(self.last_moves, [Direction.DOWN, Direction.LEFT, Direction.UP, Direction.RIGHT]) or
-                  np.array_equal(self.last_moves, [Direction.LEFT, Direction.UP, Direction.RIGHT, Direction.DOWN]) or
-                  np.array_equal(self.last_moves, [Direction.UP, Direction.LEFT, Direction.DOWN, Direction.RIGHT]) or
-                  np.array_equal(self.last_moves, [Direction.LEFT, Direction.DOWN, Direction.RIGHT, Direction.UP]) or
-                  np.array_equal(self.last_moves, [Direction.DOWN, Direction.RIGHT, Direction.UP, Direction.LEFT]) or
-                  np.array_equal(self.last_moves, [Direction.RIGHT, Direction.UP, Direction.LEFT, Direction.DOWN])):
-                self.reward -= 10
+        if len(self.last_moves) == 4:
+            # back and forth
+            if (self.last_moves[:3] == [Direction.UP, Direction.DOWN, Direction.UP] or \
+                self.last_moves[:3] == [Direction.DOWN, Direction.UP, Direction.DOWN] or \
+                self.last_moves[:3] == [Direction.LEFT, Direction.RIGHT, Direction.LEFT] or \
+                self.last_moves[:3] == [Direction.RIGHT, Direction.LEFT, Direction.RIGHT]):
+                self.reward -= 50
+
+            # clockwise loop
+            elif (self.last_moves == [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT] or \
+                  self.last_moves == [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP] or \
+                  self.last_moves == [Direction.DOWN, Direction.LEFT, Direction.UP, Direction.RIGHT] or \
+                  self.last_moves == [Direction.LEFT, Direction.UP, Direction.RIGHT, Direction.DOWN]):
+                self.reward -= 100
+
+            # counter clockwise loop
+            elif (self.last_moves == [Direction.UP, Direction.LEFT, Direction.DOWN, Direction.RIGHT] or \
+                  self.last_moves == [Direction.LEFT, Direction.DOWN, Direction.RIGHT, Direction.UP] or \
+                  self.last_moves == [Direction.DOWN, Direction.RIGHT, Direction.UP, Direction.LEFT] or \
+                  self.last_moves == [Direction.RIGHT, Direction.UP, Direction.LEFT, Direction.DOWN]):
+                self.reward -= 100
+
+    def _alive_reward(self):
+        self.reward += 1
+        if self.total_moves > self.best_total_moves:
+            self.reward += 100
+            self.best_total_moves = self.total_moves
 
     def collision_detection(self, game, action=False):
         for area in game.map.areas.values():
@@ -245,11 +259,6 @@ class Robot:
                         game._reset_robot() 
                     return True
         return False
-
-    def _alive_reward(self):
-        if self.total_moves > self.best_total_moves:
-            self.reward += 1
-            self.best_total_moves = self.total_moves
 
 
 if __name__ == "__main__":

@@ -13,11 +13,12 @@ LR = 0.001
 class Agent:
     def __init__(self):
         self.n_games = 0
-        self.epsilon = 0 # randomness
-        self.gamma = 0.9   # discount rate
+        self.epsilon = 0.2 # randomness
+        self.gamma = 0.8   # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
         self.model = Linear_QNet(12, 256, 4)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
+        self.five_last_states = []
 
     def get_state(self, game):
         next_l = Robot(x=game.robot.x - game.robot.speed, y=game.robot.y, radius=game.robot.radius)
@@ -138,7 +139,11 @@ def train():
 
             print(f"Game {agent.n_games}, Score: {score}, Record: {record}")
 
-            if agent.n_games > 50 and record == 1:
+            agent.five_last_states.append((score, record))
+            if len(agent.five_last_states) > 20:
+                agent.five_last_states.pop(0)
+
+            if all(x == agent.five_last_states[0] for x in agent.five_last_states) or (agent.n_games > 50 and record == 1):
                 game.generate_map()
 
             # Plot the score and mean score
