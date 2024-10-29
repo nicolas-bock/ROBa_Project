@@ -1,7 +1,7 @@
 import torch
 import random
 import numpy as np
-from collections import deque
+from collections import deque, Counter
 from robot_motions import Direction, Game, Robot
 from model import Linear_QNet, QTrainer
 from helper import plot
@@ -13,12 +13,13 @@ LR = 0.001
 class Agent:
     def __init__(self):
         self.n_games = 0
-        self.epsilon = 0.2 # randomness
-        self.gamma = 0.8   # discount rate
+        self.epsilon = 0.6 # randomness
+        self.gamma = 0.3   # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
         self.model = Linear_QNet(12, 256, 4)
+        self.model.load() # comment this line to train from scratch / uncomment to continue training from model file
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
-        self.five_last_states = []
+        self.last_states = []
 
     def get_state(self, game):
         next_l = Robot(x=game.robot.x - game.robot.speed, y=game.robot.y, radius=game.robot.radius)
@@ -109,6 +110,7 @@ def train():
     record = 0
     agent = Agent()
     game = Game()
+    bias = False
 
     while True:
         # get old state
@@ -118,8 +120,9 @@ def train():
         final_move = agent.get_action(state_old)
 
         # perform move and get new state
-        reward, done, score = game.play_step(final_move)
+        reward, done, score = game.play_step(final_move, bias)
         state_new = agent.get_state(game)
+        bias = False
 
         # train short memory
         agent.train_short_memory(state_old, final_move, reward, state_new, done)
@@ -139,12 +142,21 @@ def train():
 
             print(f"Game {agent.n_games}, Score: {score}, Record: {record}")
 
-            agent.five_last_states.append((score, record))
-            if len(agent.five_last_states) > 20:
-                agent.five_last_states.pop(0)
+            agent.last_states.append((score, record))
+            if len(agent.last_states) > 25:
+                agent.last_states.pop(0)
 
-            if all(x == agent.five_last_states[0] for x in agent.five_last_states) or (agent.n_games > 50 and record == 1):
-                game.generate_map()
+            # Check if 5 last states are the same
+            last_five = agent.last_states[-5:]
+            if len(agent.last_states) >= 5 and all(x == last_five[0] for x in last_five):
+                bias = True
+                
+                # Count the number of occurrences of the last 5 states
+                occurrences = sum(1 for i in range(len(agent.last_states) - 5 + 1) 
+                                if agent.last_states[i:i+5] == last_five)
+                
+                if occurrences >= 2:
+                    game.generate_map()
 
             # Plot the score and mean score
             plot_scores.append(score)

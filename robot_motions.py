@@ -34,14 +34,14 @@ class Game:
         self.map = Map(width=self.width, height=self.height)
         self.robot = Robot(self.width // 2, self.height // 2, speed=5, radius=20)
 
-    def play_step(self, action):
+    def play_step(self, action, bias=False):
         self.screen.fill(Colors.WHITE)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 return self.robot.reward, True, self.score
 
-        self.robot._update_robot_position(action)
+        self.robot._update_robot_position(action, bias)
         collision = self.robot.collision_detection(self, True)
 
         game_over = collision or self.robot.reward < -1000
@@ -57,7 +57,8 @@ class Game:
     def _reset_robot(self):
         self.robot.x = self.width // 2
         self.robot.y = self.height // 2
-        self.score = self.robot.total_moves
+        reward_per_move = self.robot.reward // self.robot.total_moves if self.robot.total_moves > 0 else 0
+        self.score = (self.robot.total_moves + reward_per_move) if self.robot.total_moves + reward_per_move > 0 else 0
         self.robot.total_moves = 0
 
     def reset(self):
@@ -150,7 +151,7 @@ class Obstacle:
         self.x = x
         self.y = y
         self.size = obstacle_size
-        self.visible = False
+        self.visible = True
 
 class Robot:
     def __init__(self, x, y, speed=5, radius=20):
@@ -160,6 +161,7 @@ class Robot:
         self.speed = speed
         self.radius = radius
         self.reward = 0
+        self.best_reward = 0
 
         self.last_moves = []
 
@@ -167,12 +169,14 @@ class Robot:
         self.total_moves = 0
         self.best_total_moves = 0
 
-    def _update_robot_position(self, action):
+    def _update_robot_position(self, action, bias):
         # AI CONTROL
         clock_wise = [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT]
         idx = clock_wise.index(self.direction)
 
-        if np.array_equal(action, [0, 1, 0, 0]):
+        if bias:
+            new_dir = clock_wise[random.choice([x for x in range(4) if x != idx])]
+        elif np.array_equal(action, [0, 1, 0, 0]):
             new_dir = clock_wise[(idx + 1) % 4]
         elif np.array_equal(action, [0, 0, 1, 0]):
             new_dir = clock_wise[(idx - 1) % 4]
@@ -224,27 +228,28 @@ class Robot:
                 self.last_moves[:3] == [Direction.DOWN, Direction.UP, Direction.DOWN] or \
                 self.last_moves[:3] == [Direction.LEFT, Direction.RIGHT, Direction.LEFT] or \
                 self.last_moves[:3] == [Direction.RIGHT, Direction.LEFT, Direction.RIGHT]):
-                self.reward -= 50
+                self.reward -= 5
 
             # clockwise loop
             elif (self.last_moves == [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT] or \
                   self.last_moves == [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP] or \
                   self.last_moves == [Direction.DOWN, Direction.LEFT, Direction.UP, Direction.RIGHT] or \
                   self.last_moves == [Direction.LEFT, Direction.UP, Direction.RIGHT, Direction.DOWN]):
-                self.reward -= 100
+                self.reward -= 10
 
             # counter clockwise loop
             elif (self.last_moves == [Direction.UP, Direction.LEFT, Direction.DOWN, Direction.RIGHT] or \
                   self.last_moves == [Direction.LEFT, Direction.DOWN, Direction.RIGHT, Direction.UP] or \
                   self.last_moves == [Direction.DOWN, Direction.RIGHT, Direction.UP, Direction.LEFT] or \
                   self.last_moves == [Direction.RIGHT, Direction.UP, Direction.LEFT, Direction.DOWN]):
-                self.reward -= 100
+                self.reward -= 10
 
     def _alive_reward(self):
         self.reward += 1
-        if self.total_moves > self.best_total_moves:
+        if self.total_moves > self.best_total_moves and self.reward > self.best_reward:
             self.reward += 100
             self.best_total_moves = self.total_moves
+            self.best_reward = self.reward
 
     def collision_detection(self, game, action=False):
         for area in game.map.areas.values():
