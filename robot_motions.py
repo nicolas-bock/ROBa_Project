@@ -236,19 +236,19 @@ class Robot:
         self._alive_reward()
 
         # MANUAL CONTROL
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_UP]:
-            self.y -= self.speed
-            self.total_moves += 1
-        elif keys[pygame.K_DOWN]:
-            self.y += self.speed
-            self.total_moves += 1
-        if keys[pygame.K_LEFT]:
-            self.x -= self.speed
-            self.total_moves += 1
-        elif keys[pygame.K_RIGHT]:
-            self.x += self.speed
-            self.total_moves += 1
+        # keys = pygame.key.get_pressed()
+        # if keys[pygame.K_UP]:
+        #     self.y -= self.speed
+        #     self.total_moves += 1
+        # elif keys[pygame.K_DOWN]:
+        #     self.y += self.speed
+        #     self.total_moves += 1
+        # if keys[pygame.K_LEFT]:
+        #     self.x -= self.speed
+        #     self.total_moves += 1
+        # elif keys[pygame.K_RIGHT]:
+        #     self.x += self.speed
+        #     self.total_moves += 1
 
     def _check_bad_moves(self):
         if len(self.last_moves) == 4:
