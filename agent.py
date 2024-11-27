@@ -5,6 +5,7 @@ from collections import deque, Counter
 from robot_motions import Direction, Game, Robot
 from model import Linear_QNet, QTrainer
 from helper import plot
+from maps import MAP_1
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -111,6 +112,8 @@ def train():
     agent = Agent()
     game = Game()
     bias = False
+
+    game = Game(generated_map=MAP_1)
 
     while True:
         # get old state
