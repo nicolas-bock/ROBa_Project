@@ -23,17 +23,6 @@ The goal of this project is to implement Monte Carlo Localization (MCL) to enabl
 
 ## Usage
 
-1. Run the main agent script:
-    python agent.py
-
-## Contributing
-
-To contribute to the project, here's the following instructions:
-
-1. Fork this repository.
-2. Create a new branch:
-    git checkout -b feature-name
-3. Commit your changes:
-    git commit -m "Add a descriptive message"
-4. Push your branch and submit a pull request.
+1. Run the main agent script using Python3:
+    python3 agent.py
 
