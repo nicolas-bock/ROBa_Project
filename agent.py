@@ -110,11 +110,9 @@ def train():
     total_score = 0
     record = 0
     agent = Agent()
-    game = Game()
-    bias = False
-
     game = Game(generated_map=MAP_1)
-
+    bias = False
+    
     while True:
         # get old state
         state_old = agent.get_state(game)
