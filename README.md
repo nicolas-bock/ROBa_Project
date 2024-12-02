@@ -26,6 +26,6 @@ The goal of this project is to implement Monte Carlo Localization (MCL) to enabl
 1. Run the main agent script using Python 3.8 or higher versions :
     python agent.py
 
-   If your system defaults to Python 2 or less, run the main agent using :
+   If you the 'python' command alias is not configured, run the main agent using :
     python3 agent.py
 
