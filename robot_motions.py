@@ -4,10 +4,7 @@ import random
 import math
 import numpy as np
 from enum import Enum
-from maps import MAP_1, DOORS
-
-pygame.init()
-pygame.display.set_caption("Robot Motions")
+from maps import scale_map, scale_doors, MAP_1, DOORS, ORIGINAL_DIMENSIONS
 
 # Directions
 class Direction(Enum):
@@ -23,19 +20,37 @@ class Colors():
     BLUE = 0, 0, 255
     RED = 255, 0, 0
     GREEN = 0, 255, 0
+    CYAN = 0, 255, 255
 
 class Game:
-    def __init__(self, width=600, height=600, generated_map=None):
-        self.width = width
-        self.height = height
+    def __init__(self, width=600, height=600, generated_map=None, generated_doors=None, nb_particles=0):
+        if generated_map:
+            self.width, self.height = self.get_map_size(generated_map)
+            self.map = Map(width=self.width, height=self.height, generated_map=generated_map, generated_doors=generated_doors)
+        else:
+            self.width = width
+            self.height = height
+            self.generate_map(generated_map, generated_doors)
+        
         # Initialize Game and Clock
         self.screen = pygame.display.set_mode((self.width, self.height))
         self.time = pygame.time
         self.score = 0
-        # Initialize the robot and load the map
-        self.map = Map(width=self.width, height=self.height, generated_map=MAP_1)
+        
+        # Initialize the robot
         self.robot = Robot(self.width // 2, self.height // 2, speed=5, radius=20)
 
+        self.nb_particles = nb_particles
+
+    def get_map_size(self, map):
+        width = 0
+        height = 0
+        for key in map:
+            for x, y, _ in map[key]:
+                width = max(width, x + 600)
+                height = max(height, y + 600)
+        return width, height
+    
     def play_step(self, action, bias=False):
         self.screen.fill(Colors.WHITE)
         for event in pygame.event.get():
@@ -49,16 +64,20 @@ class Game:
         game_over = collision or self.robot.reward < -1000
 
         self.map._discover_new_area(self.robot)
-        self.map._draw_map(self.screen, self.robot, self.time)
+        self.map._draw_map(self.screen, self.robot)
 
         pygame.display.flip()
         self.time.Clock().tick(60)
 
         return self.robot.reward, game_over, self.score
+    
     # Reset the robot position along with the score
     def _reset_robot(self):
-        self.robot.x = self.width // 2
-        self.robot.y = self.height // 2
+        # Set the robot's position to the center of the map (not colliding with obstacles or walls)
+        self.robot.x = self.width // 2 + self.robot.radius
+        self.robot.y = self.height // 2 + self.robot.radius
+        self.robot.direction = Direction.UP
+
         reward_per_move = self.robot.reward // self.robot.total_moves if self.robot.total_moves > 0 else 0
         self.score = (self.robot.total_moves + reward_per_move) if self.robot.total_moves + reward_per_move > 0 else 0
         self.robot.total_moves = 0
@@ -68,11 +87,11 @@ class Game:
         self._reset_robot()
         self.score = 0
 
-    def generate_map(self):
-        self.map = Map(width=self.width, height=self.height, generated_map=MAP_1)
+    def generate_map(self, map, doors):
+        self.map = Map(width=self.width, height=self.height, generated_map=map, generated_doors=doors)
 
 class Map:
-    def __init__(self, width, height, generated_map=None):
+    def __init__(self, width, height, generated_map=None, generated_doors=None):
         self.width = width
         self.height = height
 
@@ -82,7 +101,7 @@ class Map:
         self.border_x2 = self.width
         self.border_y2 = self.height
 
-        self.doors = DOORS
+        self.doors = generated_doors
 
         if generated_map:
             self._load_generated_map(generated_map)
@@ -127,24 +146,35 @@ class Map:
         if not self._is_area_discovered(x1, y1, x2, y2):
         #     self._add_area(x1, y1)
             robot.reward += 50
-    def _draw_map(self, screen, robot, time):
+
+    def _show_obstacles(self):
+        for area in self.areas.values():
+            for obstacle in area.obstacles:
+                obstacle.visible = True
+
+    def _draw_map(self, screen, robot):
         offset_x = self.width // 2 - robot.x
         offset_y = self.height // 2 - robot.y
+
         # Draws black rectangles as the wall of each areas
         for area in self.areas.values():
             rect = pygame.Rect(area.x1 + offset_x, area.y1 + offset_y, self.width, self.height)
             pygame.draw.rect(screen, Colors.BLACK, rect, 2)
+
         # Draw doors as green lines
         for door in self.doors.keys():
             x1, y1, x2, y2 = door
             pygame.draw.line(screen, Colors.GREEN, (x1 + offset_x, y1 + offset_y), (x2 + offset_x, y2 + offset_y), 5)
+
         # Draw obstacles as red squares
         for area in self.areas.values():
             for obstacle in area.obstacles:
                 if obstacle.visible:
                     pygame.draw.rect(screen, Colors.RED, (obstacle.x + offset_x, obstacle.y + offset_y, obstacle.size, obstacle.size))
+
         # Draw the robot
         pygame.draw.circle(screen, Colors.BLUE, (self.width // 2, self.height // 2), robot.radius)
+
         # Draw the robot's sensors as green beams
         theta = robot.convert()
         measurements = robot.scanning(self)
@@ -154,9 +184,11 @@ class Map:
         
         for i, distance in enumerate(measurements):
             ray_angle = start_angle + i * angle_increment
+
             # Calculate the endpoint of the beam based on the angle and the distance
             end_x = robot.x + math.cos(ray_angle) * distance
             end_y = robot.y + math.sin(ray_angle) * distance
+
             # Draw the beam starting from the robot's position
             pygame.draw.line(screen, Colors.GREEN, (robot.x + offset_x, robot.y + offset_y), (end_x + offset_x, end_y + offset_y), 1)
 
@@ -184,7 +216,7 @@ class Obstacle:
         self.x = x
         self.y = y
         self.size = obstacle_size
-        self.visible = True
+        self.visible = False
 
 class Robot:
     def __init__(self, x, y, speed=5, radius=20):
@@ -203,57 +235,68 @@ class Robot:
         self.best_total_moves = 0
         
     # Update the robot position based on input action
-    def _update_robot_position(self, action, bias):
+    def _update_robot_position(self, action=None, bias=False):
         # AI CONTROL
         clock_wise = [Direction.UP, Direction.RIGHT, Direction.DOWN, Direction.LEFT]
         idx = clock_wise.index(self.direction)
 
-        if bias:
-            new_dir = clock_wise[random.choice([x for x in range(4) if x != idx])]
-        elif np.array_equal(action, [0, 1, 0, 0]):
-            new_dir = clock_wise[(idx + 1) % 4]
-        elif np.array_equal(action, [0, 0, 1, 0]):
-            new_dir = clock_wise[(idx - 1) % 4]
-        elif np.array_equal(action, [0, 0, 0, 1]):
-            new_dir = clock_wise[(idx + 2) % 4]
-        else:
-            new_dir = clock_wise[idx]
+        # if bias:
+        #     new_dir = clock_wise[random.choice([x for x in range(4) if x != idx])]
+        # elif np.array_equal(action, [0, 1, 0, 0]):
+        #     new_dir = clock_wise[(idx + 1) % 4]
+        # elif np.array_equal(action, [0, 0, 1, 0]):
+        #     new_dir = clock_wise[(idx - 1) % 4]
+        # elif np.array_equal(action, [0, 0, 0, 1]):
+        #     new_dir = clock_wise[(idx + 2) % 4]
+        # else:
+        #     new_dir = clock_wise[idx]
 
-        self.direction = new_dir
-        if self.direction == Direction.UP:
-            self.y -= self.speed
-            self.total_moves += 1
-        elif self.direction == Direction.DOWN:
-            self.y += self.speed
-            self.total_moves += 1
-        elif self.direction == Direction.LEFT:
-            self.x -= self.speed
-            self.total_moves += 1
-        elif self.direction == Direction.RIGHT:
-            self.x += self.speed
-            self.total_moves += 1
-
-        self.last_moves.append(self.direction)
-        if len(self.last_moves) > 4:
-            self.last_moves.pop(0)
-
-        self._check_bad_moves()
-        self._alive_reward()
-
-        # MANUAL CONTROL
-        # keys = pygame.key.get_pressed()
-        # if keys[pygame.K_UP]:
+        # self.direction = new_dir
+        # if self.direction == Direction.UP:
         #     self.y -= self.speed
         #     self.total_moves += 1
-        # elif keys[pygame.K_DOWN]:
+        # elif self.direction == Direction.DOWN:
         #     self.y += self.speed
         #     self.total_moves += 1
-        # if keys[pygame.K_LEFT]:
+        # elif self.direction == Direction.LEFT:
         #     self.x -= self.speed
         #     self.total_moves += 1
-        # elif keys[pygame.K_RIGHT]:
+        # elif self.direction == Direction.RIGHT:
         #     self.x += self.speed
         #     self.total_moves += 1
+
+        # self.last_moves.append(self.direction)
+        # if len(self.last_moves) > 4:
+        #     self.last_moves.pop(0)
+
+        # self._check_bad_moves()
+        # self._alive_reward()
+
+        # MANUAL CONTROL
+        keys = pygame.key.get_pressed()
+        robot_moved = False
+        if keys[pygame.K_UP]:
+            self.direction = Direction.UP
+            self.y -= self.speed
+            self.total_moves += 1
+            robot_moved = True
+        elif keys[pygame.K_DOWN]:
+            self.direction = Direction.DOWN
+            self.y += self.speed
+            self.total_moves += 1
+            robot_moved = True
+        elif keys[pygame.K_LEFT]:
+            self.direction = Direction.LEFT
+            self.x -= self.speed
+            self.total_moves += 1
+            robot_moved = True
+        elif keys[pygame.K_RIGHT]:
+            self.direction = Direction.RIGHT
+            self.x += self.speed
+            self.total_moves += 1
+            robot_moved = True
+
+        return robot_moved
 
     def _check_bad_moves(self):
         if len(self.last_moves) == 4:
@@ -277,6 +320,7 @@ class Robot:
                   self.last_moves == [Direction.DOWN, Direction.RIGHT, Direction.UP, Direction.LEFT] or \
                   self.last_moves == [Direction.RIGHT, Direction.UP, Direction.LEFT, Direction.DOWN]):
                 self.reward -= 10
+
     # Reward the robot for staying alive
     def _alive_reward(self):
         self.reward += 1
@@ -325,6 +369,7 @@ class Robot:
             return True
 
         return False
+    
     # Check if the robot is on a door (Green Line)
     def _is_on_door(self, game, coord, orientation):
         for door in game.map.doors.keys():
@@ -348,6 +393,20 @@ class Robot:
                 distance = self.calc_intersection(x, y, theta, obstacle)
                 if distance and distance < closest_distance:
                     closest_distance = distance
+                    obstacle.visible = True
+
+            # Check for intersections with the area's walls
+            if area.x1 <= x <= area.x2 and area.y1 <= y <= area.y2:
+                for side in [(area.x1, area.y1, area.x2, area.y1),
+                            (area.x2, area.y1, area.x2, area.y2),
+                            (area.x1, area.y2, area.x2, area.y2),
+                            (area.x1, area.y1, area.x1, area.y2)]:
+                # Check for intersections with every sides of the area
+                    ix, iy = self.det_intersection((x, y, x + math.cos(theta) * 1000, y + math.sin(theta) * 1000), side)
+                    if ix is not None and iy is not None:
+                        distance = math.hypot(ix - x, iy - y)
+                        if distance < closest_distance:
+                            closest_distance = distance
 
         return closest_distance
 
@@ -363,6 +422,7 @@ class Robot:
             measurements.append(distance)
 
         return measurements
+    
     # Calculate the intersection of a beam with an obstacle
     def calc_intersection(self, x, y, theta, obstacle):
         obs_x, obs_y, obs_size = obstacle.x, obstacle.y, obstacle.size
@@ -383,6 +443,7 @@ class Robot:
                     min_dist = distance
 
         return min_dist
+    
     # Determine the intersection point of two line
     def det_intersection(self, line1, line2):
         x1, y1, x2, y2 = line1
@@ -400,13 +461,14 @@ class Robot:
             return px, py
 
         return None, None
+    
     # Convert a direction into an angle in radians
     def convert(self):
-        if self.direction == Direction.UP:
+        if self.direction == Direction.DOWN:
             return math.pi / 2
         elif self.direction == Direction.RIGHT:
             return 0
-        elif self.direction == Direction.DOWN:
+        elif self.direction == Direction.UP:
             return -math.pi / 2
         elif self.direction == Direction.LEFT:
             return math.pi
@@ -418,21 +480,151 @@ class Robot:
         theta = self.convert()
         measurements = self.calc_arc(self.x, self.y, theta, arc_angle=math.pi/2, num_rays=8, max=200, areas=map.areas)
         return measurements
-
-
-
-if __name__ == "__main__":
-    WIDTH = 600
-    HEIGHT = 600
-
-    game = Game(WIDTH, HEIGHT)
-
-    while True:
-        stop, score = game.play_step()
     
-        if stop:
-            break
+class MonteCarlo:
 
-    print("Final score:", score)
+    def __init__(self, steps, map):
+        self.steps = steps
+        self.particles = []
+        self.nb_particles_per_step = []
+        self.max_weight = 0.0
+        self.id_best_particle = None
+        self.map = map
+
+    def _init_particles(self, nb_particles, cost_map):
+        '''
+        Initialize the particles in the map.
+        The cost map is needed because we do not want to put particles in a non obstacle free cell
+        '''
+        width, height = self.map.width, self.map.height
+
+        for _ in range(nb_particles):
+            x = random.randint(0, width)
+            y = random.randint(0, height)
+            while cost_map[y][x] != 0:
+                x = random.randint(0, width)
+                y = random.randint(0, height)
+            self.particles.append(Particle(x, y, 1 / nb_particles))
+
+        self.nb_particles_per_step.append(nb_particles)
+    
+    def _display_particles(self, game):
+        '''
+        Display the particles on the map.
+        '''
+        offset_x = game.width // 2 - game.robot.x
+        offset_y = game.height // 2 - game.robot.y
+
+        for particle in self.particles:
+            pygame.draw.circle(game.screen, Colors.CYAN, (particle.x + offset_x, particle.y + offset_y), 4)
+        pygame.display.flip()
+
+    def _evaluate_particles(self, robot):
+        '''
+        Evaluate the particles based on the sensor data.
+        '''
+        for particle in self.particles:
+            min_distance = float('inf')
+            for area in self.map.areas.values():
+                for obstacle in area.obstacles:
+                    distance = np.sqrt((particle.x - obstacle.x) ** 2 + (particle.y - obstacle.y) ** 2)
+                    min_distance = min(min_distance, distance)
+            
+            measured_distances = robot.scanning(self.map)
+            particle.weight = np.exp(-((min_distance - np.min(measured_distances)) ** 2) / (2 * 10 ** 2))
+
+    def _resample_particles(self):
+        '''
+        Resample the particles based on their weight.
+        '''
+        new_particles = []
+        weights = [particle.weight for particle in self.particles]
+        weights_sum = sum(weights)
+        weights = [weight / weights_sum for weight in weights]
+
+        for _ in range(len(self.particles)):
+            new_particles.append(self._resample(weights))
+
+        self.particles = new_particles
+
+    def _resample(self, weights):
+        '''
+        Resample a particle based on its weight.
+        '''
+        random_number = random.random()
+        cumulative_sum = 0.0
+        for i, weight in enumerate(weights):
+            cumulative_sum += weight
+            if cumulative_sum > random_number:
+                return Particle(self.particles[i].x, self.particles[i].y, 1 / len(self.particles))
+
+class Particle:
+    def __init__(self, x, y, weight):
+        self.x = x
+        self.y = y
+        self.weight = weight
+
+    def __repr__(self):
+        return f'Particle({self.x}, {self.y}, {self.weight})'
+    
+class Cost_Map:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.cost_map = [[0 for _ in range(width)] for _ in range(height)]
+
+    def _update_cost_map(self, game):
+        for area in game.map.areas.values():
+            for obstacle in area.obstacles:
+                self.cost_map[obstacle.y][obstacle.x] = 1
+
+    def __getitem__(self, index):
+        return self.cost_map[index]
+    
+    def __setitem__(self, index, value):
+        self.cost_map[index] = value
+
+
+if __name__ == '__main__':
+    pygame.init()
+
+    info = pygame.display.Info()
+    screen_width, screen_height = info.current_w, info.current_h
+
+    scaled_map = scale_map(screen_width, screen_height, MAP_1, ORIGINAL_DIMENSIONS)
+    scaled_doors = scale_doors(screen_width, screen_height, DOORS, ORIGINAL_DIMENSIONS)
+
+    game = Game(generated_map=scaled_map, generated_doors=scaled_doors, nb_particles=100)
+
+    cost_map = Cost_Map(game.width, game.height)
+    cost_map._update_cost_map(game)
+
+    mc = MonteCarlo(100, game.map)
+    mc._init_particles(500, cost_map)
+
+    game._reset_robot()
+
+    game.screen.fill(Colors.WHITE)
+    game.map._draw_map(game.screen, game.robot)
+
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+
+        if game.robot._update_robot_position():
+            game.screen.fill(Colors.WHITE)
+            game.map._draw_map(game.screen, game.robot)
+        
+            mc._display_particles(game)
+            mc._evaluate_particles(game.robot)
+            mc._resample_particles()
+
+        game.time.Clock().tick(60)
+        pygame.display.flip()
 
     pygame.quit()

@@ -4,6 +4,9 @@ from IPython import display
 plt.ion()
 
 def plot(scores, mean_scores):
+    '''
+    Plot the scores and mean scores.
+    '''
     display.clear_output(wait=True)
     display.display(plt.gcf())
     plt.clf()
@@ -15,5 +18,21 @@ def plot(scores, mean_scores):
     plt.ylim(ymin=0)
     plt.text(len(scores)-1, scores[-1], str(scores[-1]))
     plt.text(len(mean_scores)-1, mean_scores[-1], str(mean_scores[-1]))
+    plt.show(block=False)
+    plt.pause(.1)
+
+def plot_nb_particles(steps, particles):
+    '''
+    Plot the number of particles at each step.
+    '''
+    display.clear_output(wait=True)
+    display.display(plt.gcf())
+    plt.clf()
+    plt.title('Number of Particles per step')
+    plt.xlabel('Step')
+    plt.ylabel('Number of Particles')
+    plt.xlim(xmin=0, xmax=steps)
+    plt.ylim(ymin=0, ymax=len(particles))
+    plt.plot(particles)
     plt.show(block=False)
     plt.pause(.1)

@@ -1,3 +1,35 @@
+def scale_map(screen_width, screen_height, original_map, original_dimensions):
+    scaled_map = {}
+    for room_coords, objects in original_map.items():
+        scaled_room_coords = (
+            int(room_coords[0] * screen_width / original_dimensions[0]),
+            int(room_coords[1] * screen_height / original_dimensions[1])
+        )
+        scaled_objects = [
+            (
+                int(x * screen_width / original_dimensions[0]),
+                int(y * screen_height / original_dimensions[1]),
+                int(radius * min(screen_width / original_dimensions[0], screen_height / original_dimensions[1]))
+            )
+            for x, y, radius in objects
+        ]
+        scaled_map[scaled_room_coords] = scaled_objects
+    return scaled_map
+
+def scale_doors(screen_width, screen_height, original_doors, original_dimensions):
+    scaled_doors = {}
+    for (x1, y1, x2, y2), destination in original_doors.items():
+        scaled_door_coords = (
+            int(x1 * screen_width / original_dimensions[0]),
+            int(y1 * screen_height / original_dimensions[1]),
+            int(x2 * screen_width / original_dimensions[0]),
+            int(y2 * screen_height / original_dimensions[1]),
+        )
+        scaled_doors[scaled_door_coords] = destination
+    return scaled_doors
+
+ORIGINAL_DIMENSIONS = (1800, 1800)
+
 MAP_1 = {
     # Bedroom 1
     (0, 0): [

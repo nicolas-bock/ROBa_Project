@@ -1,9 +1,12 @@
 import torch
 import random
+import pygame
 import numpy as np
+import argparse
 from collections import deque, Counter
 from robot_motions import Direction, Game, Robot
 from model import Linear_QNet, QTrainer
+from monte_carlo import MonteCarlo
 from helper import plot
 from maps import MAP_1
 
@@ -167,4 +170,24 @@ def train():
             plot(plot_scores, plot_mean_scores)
 
 if __name__ == '__main__':
-    train()
+    pygame.init()
+    pygame.display.set_caption("Robot Motions")
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train", help="Train the model", type=bool, required=False, default=False)
+    parser.add_argument("--nb_particles", help="Number of particles", type=int, required=True, default=100)
+    parser.add_argument("--steps", help="Number of steps", type=int, required=True, default=100)
+    parser.add_argument("--map", help="Map number", type=int, required=True, default=1)
+
+    args = parser.parse_args()
+    steps = args.steps
+    nb_particles = args.nb_particles
+    map_number = args.map
+
+    if args.train:
+        train()
+    else:
+        mc = MonteCarlo(steps, MAP_1)
+        mc.localize(nb_particles)
+
+    pygame.quit()
